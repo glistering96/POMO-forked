@@ -84,7 +84,7 @@ trainer_params = {
 
 logger_params = {
     'log_file': {
-        'desc': 'train__tsp_n100__3000epoch',
+        'desc': 'train__tsp_n100__3000epoch_val',
         'filename': 'log.txt'
     }
 }

@@ -31,6 +31,8 @@ class TSPModel(nn.Module):
             encoded_first_node = _get_encoding(self.encoded_nodes, selected)
             # shape: (batch, pomo, embedding)
             self.decoder.set_q1(encoded_first_node)
+    
+            _, val = self.decoder(encoded_first_node, ninf_mask=state.ninf_mask)
 
         else:
             encoded_last_node = _get_encoding(self.encoded_nodes, state.current_node)

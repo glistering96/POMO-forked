@@ -30,7 +30,7 @@ class TSPTrainer:
         self.logger = getLogger(name='trainer')
         self.result_folder = get_result_folder()
         self.result_log = LogData()
-        self.tb = SummaryWriter(log_dir="./logs")
+        self.tb = SummaryWriter(log_dir=f"./logs/{self.result_folder}")
 
         # cuda
         USE_CUDA = self.trainer_params['use_cuda']
@@ -74,7 +74,7 @@ class TSPTrainer:
             self.scheduler.step()
 
             # Train
-            train_score, train_loss = self._train_one_epoch(epoch)
+            train_score, train_loss, val_loss = self._train_one_epoch(epoch)
             self.result_log.append('train_score', epoch, train_score)
             self.result_log.append('train_loss', epoch, train_loss)
             
@@ -88,7 +88,8 @@ class TSPTrainer:
             all_done = (epoch == self.trainer_params['epochs'])
             model_save_interval = self.trainer_params['logging']['model_save_interval']
             
-            
+            self.tb.add_scalar('train/score', train_score, epoch)
+            self.tb.add_scalar('loss/val_loss', val_loss, epoch)
 
             if all_done or (epoch % model_save_interval) == 0:
                 self.logger.info("Saving trained_model")
@@ -112,6 +113,7 @@ class TSPTrainer:
 
         score_AM = AverageMeter()
         loss_AM = AverageMeter()
+        val_loss_AM = AverageMeter()
 
         train_num_episode = self.trainer_params['train_episodes']
         episode = 0
@@ -121,12 +123,11 @@ class TSPTrainer:
             remaining = train_num_episode - episode
             batch_size = min(self.trainer_params['train_batch_size'], remaining)
 
-            avg_score, avg_loss = self._train_one_batch(batch_size)
+            avg_score, avg_loss, val_loss = self._train_one_batch(batch_size)
             score_AM.update(avg_score, batch_size)
             loss_AM.update(avg_loss, batch_size)
-            
-            self.tb.add_scalar('train/score', avg_score, epoch)
-            
+            val_loss_AM.update(val_loss, batch_size)
+        
             episode += batch_size
 
             # Log First 10 Batch, only at the first epoch
@@ -141,8 +142,8 @@ class TSPTrainer:
         self.logger.info('Epoch {:3d}: Train ({:3.0f}%)  Score: {:.4f},  Loss: {:.4f}'
                          .format(epoch, 100. * episode / train_num_episode,
                                  score_AM.avg, loss_AM.avg))
-
-        return score_AM.avg, loss_AM.avg
+    
+        return score_AM.avg, loss_AM.avg, val_loss_AM.avg
 
     def _train_one_batch(self, batch_size):
 
@@ -166,17 +167,21 @@ class TSPTrainer:
             # shape: (batch, pomo)
             state, reward, done = self.env.step(selected)
             prob_list = torch.cat((prob_list, prob[:, :, None]), dim=2)
-            vals.append(val)
+            vals.append(val[:, :, None, :])
 
         # Loss
         ###############################################
-        baseline =  reward.float().mean(dim=1, keepdims=True) # shape: (batch, 1), original
-        val_tensor = torch.cat(vals, dim=1)  # shape: (batch, pomo)
-        advantage = reward - val_tensor
+        reward_mean =  reward.float().mean(dim=1, keepdims=True) # shape: (batch, 1), original
+        val_tensor = torch.cat(vals, dim=2)  # shape: (batch, pomo, T, 1)
+        baseline = val_tensor
+        reward_broadcasted = torch.broadcast_to(reward[:, :, None, None], baseline.shape)
+        advantage = reward_broadcasted - baseline.detach()
         # shape: (batch, pomo)
         log_prob = prob_list.log().sum(dim=2)
         # size = (batch, pomo)
-        loss = -advantage * log_prob  # Minus Sign: To Increase REWARD
+        val_loss = torch.nn.functional.mse_loss(val_tensor, reward_broadcasted)
+        
+        loss = -advantage * log_prob[:, :, None, None] + 0.5*val_loss # Minus Sign: To Increase REWARD
         # shape: (batch, pomo)
         loss_mean = loss.mean()
 
@@ -190,4 +195,4 @@ class TSPTrainer:
         self.model.zero_grad()
         loss_mean.backward()
         self.optimizer.step()
-        return score_mean.item(), loss_mean.item()
+        return score_mean.item(), loss_mean.item(), val_loss.item()
