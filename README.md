@@ -1,18 +1,28 @@
-# POMO
 
-### Files in "OLD_ipynb_ver" folders 
+# POMO, as .py version
 
-They are the original codes (2020) used for the paper<br>
-> POMO: Policy Optimization with Multiple Optima for Reinforcement Learning<br>
-> accepted at NeurIPS 2020<br>
-http://arxiv.org/abs/2010.16011
-https://proceedings.neurips.cc/paper/2020/hash/f231f2107df69eab0a3862d50018a9b2-Abstract.html 
+We provide codes for two CO (combinatorial optimization) problems:<br>
+- Traveling Salesman Problem (TSP) <br>
+- Capacitated Vehicle Routing Problem (CVRP) <br>
 
-They are based on ipynb files and easier to play with interactively.
- <br>
- <br>
- <br>
-### Files in "NEW_py_ver" folders 
-They are the updated codes, newly structured in 2021. <br>
-They are based on py files, so that they can be run on servers more easily.
 
+### Changes from the old version
+
+Other than the re-organized structure, no major change has been made, so that the two versions should give roughly the same results.
+Some meaningful changes are:
+- Query token in the decoder does not contain "graph encoding" now, because this does not seem to make much difference. (But who knows?)
+- Normalization methods have changed, from BatchNorm to InstanceNorm. (It seemed more natural. But this may have affected the model's performance in a negative way.) 
+
+
+### Basic Usage
+
+To train a model, run *train.py*. <br>
+*train.py* contains parameters you can modify. At the moment, it is set to train N=20 problems. <br>
+<br>
+To test a model, run *test.py*. <br>
+You can specify the model as a parameter contained in *test.py*. At the moment, it is set to use the saved model (N=20) we have provided (in *result* folder), but you can easily use the one you have trained using *train.py*.
+
+
+### Used Libraries
+python v3.7.6 <br>
+torch==1.7.0 <br>
