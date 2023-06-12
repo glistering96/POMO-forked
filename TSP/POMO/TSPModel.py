@@ -35,7 +35,7 @@ class TSPModel(nn.Module):
         else:
             encoded_last_node = _get_encoding(self.encoded_nodes, state.current_node)
             # shape: (batch, pomo, embedding)
-            probs = self.decoder(encoded_last_node, ninf_mask=state.ninf_mask)
+            probs, val = self.decoder(encoded_last_node, ninf_mask=state.ninf_mask)
             # shape: (batch, pomo, problem)
 
             if self.training or self.model_params['eval_type'] == 'softmax':
@@ -56,8 +56,7 @@ class TSPModel(nn.Module):
                 # shape: (batch, pomo)
                 prob = None
 
-
-        return selected, prob
+        return selected, prob, val
 
 
 def _get_encoding(encoded_nodes, node_index_to_pick):
@@ -144,6 +143,12 @@ class EncoderLayer(nn.Module):
         # shape: (batch, problem, EMBEDDING_DIM)
 
 
+class SwiGLU(nn.Module):
+    def forward(self, x):
+        x, gate = x.chunk(2, dim=-1)
+        return F.silu(gate) * x
+
+
 ########################################
 # DECODER
 ########################################
@@ -162,6 +167,12 @@ class TSP_Decoder(nn.Module):
         self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
 
         self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
+        
+        self.value_net = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim*2),
+            SwiGLU(),
+            nn.Linear(embedding_dim, 1)            
+        )
 
         self.k = None  # saved key, for multi-head attention
         self.v = None  # saved value, for multi-head_attention
@@ -223,7 +234,9 @@ class TSP_Decoder(nn.Module):
         probs = F.softmax(score_masked, dim=2)
         # shape: (batch, pomo, problem)
 
-        return probs
+        val = self.value_net(mh_atten_out)
+
+        return probs, val
 
 
 ########################################
