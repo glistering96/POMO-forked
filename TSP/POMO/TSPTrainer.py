@@ -31,6 +31,8 @@ class TSPTrainer:
         self.result_folder = get_result_folder()
         self.result_log = LogData()
         self.tb = SummaryWriter(log_dir=f"./logs/{self.result_folder}")
+        
+        self.baseline = self.trainer_params['baseline']
 
         # cuda
         USE_CUDA = self.trainer_params['use_cuda']
@@ -169,20 +171,29 @@ class TSPTrainer:
             prob_list = torch.cat((prob_list, prob[:, :, None]), dim=2)
             vals.append(val[:, :, None, :])
 
+        log_prob = prob_list.log().sum(dim=2)
+        
         # Loss
         ###############################################
         reward_mean =  reward.float().mean(dim=1, keepdims=True) # shape: (batch, 1), original
         val_tensor = torch.cat(vals, dim=2)  # shape: (batch, pomo, T, 1)
-        baseline = val_tensor
-        reward_broadcasted = torch.broadcast_to(reward[:, :, None, None], baseline.shape)
-        advantage = reward_broadcasted - baseline.detach()
-        # shape: (batch, pomo)
-        log_prob = prob_list.log().sum(dim=2)
-        # size = (batch, pomo)
-        val_loss = torch.nn.functional.mse_loss(val_tensor, reward_broadcasted)
         
-        loss = -advantage * log_prob[:, :, None, None] + 0.5*val_loss # Minus Sign: To Increase REWARD
-        # shape: (batch, pomo)
+        if self.baseline == 'val':
+            baseline = val_tensor
+            reward_broadcasted = torch.broadcast_to(reward[:, :, None, None], baseline.shape)
+            val_loss = torch.nn.functional.mse_loss(val_tensor, reward_broadcasted)
+            advantage = reward_broadcasted - baseline.detach()
+            loss = -advantage * log_prob[:, :, None, None] + 0.5*val_loss # Minus Sign: To Increase REWARD
+            
+        elif self.baseline == 'mean':
+            baseline = reward_mean
+            # shape: (batch, 1)
+            advantage = reward - baseline.detach()
+            # shape: (batch, pomo)
+            loss = -advantage * log_prob
+            # shape: (batch, pomo)
+            val_loss = torch.zeros(1)
+
         loss_mean = loss.mean()
 
         # Score

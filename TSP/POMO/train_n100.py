@@ -59,20 +59,12 @@ optimizer_params = {
 trainer_params = {
     'use_cuda': USE_CUDA,
     'cuda_device_num': CUDA_DEVICE_NUM,
-    'epochs': 3100,
-    'train_episodes': 100 * 1000,
-    'train_batch_size': 64,
+    'epochs': 30,
+    'train_episodes': 100*1000,
+    'train_batch_size': 128,
+    'baseline': 'val',
     'logging': {
-        'model_save_interval': 100,
-        'img_save_interval': 100,
-        'log_image_params_1': {
-            'json_foldername': 'log_image_style',
-            'filename': 'style_tsp_100.json'
-        },
-        'log_image_params_2': {
-            'json_foldername': 'log_image_style',
-            'filename': 'style_loss_1.json'
-        },
+        'model_save_interval': 2,
     },
     'model_load': {
         'enable': False,  # enable loading pre-trained model
@@ -82,9 +74,11 @@ trainer_params = {
     }
 }
 
+desc = f"tsp_n{env_params['problem_size']}-{trainer_params['train_episodes']}_episodes-{trainer_params['baseline']}"
+
 logger_params = {
     'log_file': {
-        'desc': 'train__tsp_n100__3000epoch_val',
+        'desc': desc,
         'filename': 'log.txt'
     }
 }
