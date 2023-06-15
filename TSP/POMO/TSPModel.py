@@ -134,14 +134,14 @@ class EncoderLayer(nn.Module):
         out_concat = multi_head_attention(q, k, v)
         # shape: (batch, problem, HEAD_NUM*KEY_DIM)
 
-        multi_head_out = self.multi_head_combine(out_concat)
+        multi_head_out = self.multi_head_combine(out_concat) + input1
         # shape: (batch, problem, EMBEDDING_DIM)
 
         out1 = self.addAndNormalization1(input1, multi_head_out)
         out2 = self.feedForward(out1)
         out3 = self.addAndNormalization2(out1, out2)
 
-        return out3
+        return out3 + out1
         # shape: (batch, problem, EMBEDDING_DIM)
 
 
@@ -327,10 +327,11 @@ class Feed_Forward_Module(nn.Module):
         embedding_dim = model_params['embedding_dim']
         ff_hidden_dim = model_params['ff_hidden_dim']
 
-        self.W1 = nn.Linear(embedding_dim, ff_hidden_dim)
+        self.W1 = nn.Linear(embedding_dim, ff_hidden_dim*2)
         self.W2 = nn.Linear(ff_hidden_dim, embedding_dim)
+        self.act = SwiGLU()
 
     def forward(self, input1):
         # input.shape: (batch, problem, embedding)
 
-        return self.W2(F.relu(self.W1(input1)))
+        return self.W2(self.act(self.W1(input1)))
