@@ -21,9 +21,12 @@ sys.path.insert(0, "../..")  # for utils
 # import
 
 import logging
-from utils.utils import create_logger, copy_all_src
+from utils.utils import create_logger, copy_all_src, get_result_folder, set_result_folder
 
-from TSPTrainer import TSPTrainer as Trainer
+from TSPTrainer import TSPTrainer as Model
+import pytorch_lightning as pl
+from lightning.pytorch import loggers as pl_loggers
+import torch
 
 
 ##########################################################################################
@@ -61,7 +64,7 @@ trainer_params = {
     'cuda_device_num': CUDA_DEVICE_NUM,
     'epochs': 30,
     'train_episodes': 100*1000,
-    'train_batch_size': 128,
+    'train_batch_size': 32,
     'baseline': 'val',
     'logging': {
         'model_save_interval': 2,
@@ -86,6 +89,17 @@ logger_params = {
 ##########################################################################################
 # main
 
+def set_path(log_file):
+    if 'filepath' not in log_file:
+        log_file['filepath'] = get_result_folder()
+
+    if 'desc' in log_file:
+        log_file['filepath'] = log_file['filepath'].format(desc='_' + log_file['desc'])
+    else:
+        log_file['filepath'] = log_file['filepath'].format(desc='')
+
+    set_result_folder(log_file['filepath'])
+
 def main():
     if DEBUG_MODE:
         _set_debug_mode()
@@ -93,12 +107,47 @@ def main():
     create_logger(**logger_params)
     _print_config()
 
-    trainer = Trainer(env_params=env_params,
+    model = Model(env_params=env_params,
                       model_params=model_params,
                       optimizer_params=optimizer_params,
                       trainer_params=trainer_params)
+    
+    epochs = trainer_params['epochs']
+    
+    result_folder = get_result_folder()
+        
+    logger = pl_loggers.TensorBoardLogger(save_dir=result_folder,
+                                          name='', max_queue=500)
 
-    copy_all_src(trainer.result_folder)
+    default_root_dir = logger.log_dir
+    
+    score_cp_callback = pl.callbacks.ModelCheckpoint(
+        dirpath=default_root_dir,
+        monitor="train_score",
+        every_n_epochs=trainer_params['logging']['model_save_interval'],
+        mode="min",
+        filename="{epoch}-{train_score:.5f}",
+        save_on_train_epoch_end=True,
+        save_top_k=5
+    )
+
+    trainer = pl.Trainer(
+        accumulate_grad_batches=1,
+        logger=logger,
+        # log_every_n_epoch=1,
+        check_val_every_n_epoch=0,
+        max_epochs=epochs,
+        default_root_dir=default_root_dir,
+        precision="16-mixed",
+        callbacks=[score_cp_callback],
+        gradient_clip_val=1.0
+    )
+    num_steps_in_epoch = trainer_params['train_episodes'] // trainer_params['train_batch_size'] + 1
+    dummy_dl = torch.utils.data.DataLoader(torch.zeros((num_steps_in_epoch, 1, 1, 1)), batch_size=1)
+    trainer.fit(model, train_dataloaders=dummy_dl)
+    
+
+    # copy_all_src(trainer.result_folder)
 
     trainer.run()
 

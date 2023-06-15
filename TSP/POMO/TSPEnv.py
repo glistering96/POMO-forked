@@ -47,6 +47,8 @@ class TSPEnv:
         # shape: (batch, pomo)
         self.selected_node_list = None
         # shape: (batch, pomo, 0~problem)
+        
+        device = None
 
     def load_problems(self, batch_size, aug_factor=1):
         self.batch_size = batch_size
@@ -91,7 +93,7 @@ class TSPEnv:
         self.selected_count += 1
         self.current_node = selected
         # shape: (batch, pomo)
-        self.selected_node_list = torch.cat((self.selected_node_list, self.current_node[:, :, None]), dim=2)
+        self.selected_node_list = torch.cat((self.selected_node_list.to(self.device), self.current_node[:, :, None]), dim=2)
         # shape: (batch, pomo, 0~problem)
 
         # UPDATE STEP STATE
@@ -112,7 +114,7 @@ class TSPEnv:
     def _get_travel_distance(self):
         gathering_index = self.selected_node_list.unsqueeze(3).expand(self.batch_size, -1, self.problem_size, 2)
         # shape: (batch, pomo, problem, 2)
-        seq_expanded = self.problems[:, None, :, :].expand(self.batch_size, self.pomo_size, self.problem_size, 2)
+        seq_expanded = self.problems[:, None, :, :].expand(self.batch_size, self.pomo_size, self.problem_size, 2).to(self.device)
 
         ordered_seq = seq_expanded.gather(dim=2, index=gathering_index)
         # shape: (batch, pomo, problem, 2)

@@ -3,6 +3,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from TSP.POMO.TSPEnv import Step_State
+
 
 class TSPModel(nn.Module):
 
@@ -14,19 +16,25 @@ class TSPModel(nn.Module):
         self.decoder = TSP_Decoder(**model_params)
         self.encoded_nodes = None
         # shape: (batch, problem, EMBEDDING_DIM)
+        self.device = None
 
     def pre_forward(self, reset_state):
-        self.encoded_nodes = self.encoder(reset_state.problems)
+        self.encoded_nodes = self.encoder(reset_state.problems.to(self.device))
         # shape: (batch, problem, EMBEDDING_DIM)
         self.decoder.set_kv(self.encoded_nodes)
 
-    def forward(self, state):
+    def forward(self, state: Step_State):
         batch_size = state.BATCH_IDX.size(0)
         pomo_size = state.BATCH_IDX.size(1)
+        
+        # move everyting in state to self.device
+        for k, v in state.__dict__.items():
+            if isinstance(v, torch.Tensor):
+                setattr(state, k, v.to(self.device))
 
         if state.current_node is None:
-            selected = torch.arange(pomo_size)[None, :].expand(batch_size, pomo_size)
-            prob = torch.ones(size=(batch_size, pomo_size))
+            selected = torch.arange(pomo_size)[None, :].expand(batch_size, pomo_size).to(self.device)
+            prob = torch.ones(size=(batch_size, pomo_size)).to(self.device)
 
             encoded_first_node = _get_encoding(self.encoded_nodes, selected)
             # shape: (batch, pomo, embedding)
@@ -35,6 +43,7 @@ class TSPModel(nn.Module):
             _, val = self.decoder(encoded_first_node, ninf_mask=state.ninf_mask)
 
         else:
+            
             encoded_last_node = _get_encoding(self.encoded_nodes, state.current_node)
             # shape: (batch, pomo, embedding)
             probs, val = self.decoder(encoded_last_node, ninf_mask=state.ninf_mask)
@@ -91,10 +100,11 @@ class TSP_Encoder(nn.Module):
 
         self.embedding = nn.Linear(2, embedding_dim)
         self.layers = nn.ModuleList([EncoderLayer(**model_params) for _ in range(encoder_layer_num)])
+        self.device = None
 
     def forward(self, data):
         # data.shape: (batch, problem, 2)
-
+        data = data.to(self.device)
         embedded_input = self.embedding(data)
         # shape: (batch, problem, embedding)
 
@@ -162,7 +172,8 @@ class TSP_Decoder(nn.Module):
         embedding_dim = self.model_params['embedding_dim']
         head_num = self.model_params['head_num']
         qkv_dim = self.model_params['qkv_dim']
-
+        self.device = None
+        
         self.Wq_first = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wq_last = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wk = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
