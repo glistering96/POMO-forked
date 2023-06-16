@@ -109,4 +109,13 @@ class TSPTrainer(pl.LightningModule):
         self.log('debug/lr', lr, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_loss', val_loss, on_epoch=True, prog_bar=True, logger=True)
         
+        self.add_histogram()
+        
         return loss_mean
+    
+    def add_histogram(self):
+        for name, param in self.model.named_parameters():
+            self.logger.experiment.add_histogram(f"{name}/weight", param, self.current_epoch)
+
+            if param.grad is not None and not torch.isinf(param.grad).any() and not torch.isnan(param.grad).any():
+                self.logger.experiment.add_histogram(f"{name}/grad", param.grad, self.current_epoch)
