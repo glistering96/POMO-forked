@@ -69,37 +69,37 @@ class TSPTrainer(pl.LightningModule):
             # shape: (batch, pomo)
             state, reward, done = self.env.step(selected)
             prob_list = torch.cat((prob_list, prob[:, :, None]), dim=2)
-            vals.append(val[:, :, None, :])
+            vals.append(val)
 
         log_prob = prob_list.log().sum(dim=2)
-        
+
+        reward = -reward
         # Loss
         ###############################################
-        reward_mean =  reward.float().mean(dim=1, keepdims=True) # shape: (batch, 1), original
-        val_tensor = torch.cat(vals, dim=2)  # shape: (batch, pomo, T, 1)
-        
+        val_tensor = torch.cat(vals, dim=-1)  # shape: (batch, pomo, T)
+        reward_broadcasted = torch.broadcast_to(reward[:, :, None], val_tensor.shape)
+        val_loss = torch.nn.functional.mse_loss(val_tensor, reward_broadcasted)
+
         if self.baseline == 'val':
             baseline = val_tensor
-            reward_broadcasted = torch.broadcast_to(reward[:, :, None, None], baseline.shape)
-            val_loss = torch.nn.functional.mse_loss(val_tensor, reward_broadcasted)
             advantage = reward_broadcasted - baseline.detach()
-            loss = -advantage * log_prob[:, :, None, None] + 0.5*val_loss # Minus Sign: To Increase REWARD
+            loss = advantage * log_prob[:, :, None] + 0.5*val_loss # Minus Sign: To Increase REWARD
             
         elif self.baseline == 'mean':
-            baseline = reward_mean
+            baseline = reward.float().mean(dim=1, keepdims=True) # shape: (batch, 1), original
             # shape: (batch, 1)
             advantage = reward - baseline.detach()
             # shape: (batch, pomo)
-            loss = -advantage * log_prob
+            loss = advantage * log_prob + 0.5*val_loss # Minus Sign: To Increase REWARD
             # shape: (batch, pomo)
-            val_loss = torch.zeros(1)
 
         loss_mean = loss.mean()
 
         # Score
         ###############################################
-        max_pomo_reward, _ = reward.max(dim=1)  # get best results from pomo
-        score_mean = -max_pomo_reward.float().mean()  # negative sign to make positive value
+
+        max_pomo_reward, _ = reward.min(dim=1)  # get best results from pomo
+        score_mean = max_pomo_reward.float().mean()  # negative sign to make positive value
 
         lr = self.trainer.optimizers[0].param_groups[0]['lr']
         
@@ -108,9 +108,7 @@ class TSPTrainer(pl.LightningModule):
         self.log('train_score', score_mean, on_epoch=True, prog_bar=True, logger=True)
         self.log('debug/lr', lr, on_epoch=True, prog_bar=True, logger=True)
         self.log('val_loss', val_loss, on_epoch=True, prog_bar=True, logger=True)
-        
-        self.add_histogram()
-        
+
         return loss_mean
     
     def add_histogram(self):
