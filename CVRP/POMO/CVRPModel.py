@@ -33,10 +33,13 @@ class CVRPModel(nn.Module):
         batch_size = state.BATCH_IDX.size(0)
         pomo_size = state.BATCH_IDX.size(1)
 
-
         if state.selected_count == 0:  # First Move, depot
-            selected = torch.zeros(size=(batch_size, pomo_size), dtype=torch.long)
-            prob = torch.ones(size=(batch_size, pomo_size))
+            selected = torch.zeros(size=(batch_size, pomo_size), dtype=torch.long).to(self.device)
+            prob = torch.ones(size=(batch_size, pomo_size)).to(self.device)
+
+            encoded_last_node = _get_encoding(self.encoded_nodes, selected)
+            # shape: (batch, pomo, embedding)
+            _, val = self.decoder(encoded_last_node, state.load, ninf_mask=state.ninf_mask)
 
             # # Use Averaged encoded nodes for decoder input_1
             # encoded_nodes_mean = self.encoded_nodes.mean(dim=1, keepdim=True)
@@ -49,13 +52,16 @@ class CVRPModel(nn.Module):
             # self.decoder.set_q2(encoded_first_node)
 
         elif state.selected_count == 1:  # Second Move, POMO
-            selected = torch.arange(start=1, end=pomo_size+1)[None, :].expand(batch_size, pomo_size)
-            prob = torch.ones(size=(batch_size, pomo_size))
+            selected = torch.arange(start=1, end=pomo_size+1)[None, :].expand(batch_size, pomo_size).to(self.device)
+            prob = torch.ones(size=(batch_size, pomo_size)).to(self.device)
+            encoded_last_node = _get_encoding(self.encoded_nodes, selected)
+            # shape: (batch, pomo, embedding)
+            _, val = self.decoder(encoded_last_node, state.load, ninf_mask=state.ninf_mask)
 
         else:
             encoded_last_node = _get_encoding(self.encoded_nodes, state.current_node)
             # shape: (batch, pomo, embedding)
-            probs = self.decoder(encoded_last_node, state.load, ninf_mask=state.ninf_mask)
+            probs, val = self.decoder(encoded_last_node, state.load, ninf_mask=state.ninf_mask)
             # shape: (batch, pomo, problem+1)
 
             if self.training or self.model_params['eval_type'] == 'softmax':
@@ -74,7 +80,7 @@ class CVRPModel(nn.Module):
                 # shape: (batch, pomo)
                 prob = None  # value not needed. Can be anything.
 
-        return selected, prob
+        return selected, prob, val
 
 
 def _get_encoding(encoded_nodes, node_index_to_pick):
@@ -168,6 +174,11 @@ class EncoderLayer(nn.Module):
         # shape: (batch, problem, embedding)
 
 
+class SwiGLU(nn.Module):
+    def forward(self, x):
+        x, gate = x.chunk(2, dim=-1)
+        return F.silu(gate) * x
+
 ########################################
 # DECODER
 ########################################
@@ -193,6 +204,13 @@ class CVRP_Decoder(nn.Module):
         self.single_head_key = None  # saved, for single-head attention
         # self.q1 = None  # saved q1, for multi-head attention
         # self.q2 = None  # saved q2, for multi-head attention
+
+        self.value_net = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim*2),
+            SwiGLU(),
+            nn.Linear(embedding_dim, 1)
+        )
+
 
     def set_kv(self, encoded_nodes):
         # encoded_nodes.shape: (batch, problem+1, embedding)
@@ -260,7 +278,9 @@ class CVRP_Decoder(nn.Module):
         probs = F.softmax(score_masked, dim=2)
         # shape: (batch, pomo, problem)
 
-        return probs
+        val = self.value_net(mh_atten_out)
+
+        return probs, val
 
 
 ########################################
@@ -367,7 +387,7 @@ class FeedForward(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
         embedding_dim = model_params['embedding_dim']
-        ff_hidden_dim = model_params['ff_hidden_dim']
+        ff_hidden_dim = embedding_dim*2
 
         self.W1 = nn.Linear(embedding_dim, ff_hidden_dim)
         self.W2 = nn.Linear(ff_hidden_dim, embedding_dim)

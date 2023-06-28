@@ -144,14 +144,14 @@ class EncoderLayer(nn.Module):
         out_concat = multi_head_attention(q, k, v)
         # shape: (batch, problem, HEAD_NUM*KEY_DIM)
 
-        multi_head_out = self.multi_head_combine(out_concat) + input1
+        multi_head_out = self.multi_head_combine(out_concat)
         # shape: (batch, problem, EMBEDDING_DIM)
 
         out1 = self.addAndNormalization1(input1, multi_head_out)
         out2 = self.feedForward(out1)
         out3 = self.addAndNormalization2(out1, out2)
 
-        return out3 + out1
+        return out3
         # shape: (batch, problem, EMBEDDING_DIM)
 
 
@@ -220,7 +220,7 @@ class TSP_Decoder(nn.Module):
         q_last = reshape_by_heads(self.Wq_last(encoded_last_node), head_num=head_num)
         # shape: (batch, head_num, pomo, qkv_dim)
 
-        q = self.q_first + q_last
+        q = q_last  # self.q_first + q_last
         # shape: (batch, head_num, pomo, qkv_dim)
 
         out_concat = multi_head_attention(q, self.k, self.v, rank3_ninf_mask=ninf_mask)

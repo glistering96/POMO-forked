@@ -42,7 +42,7 @@ model_params = {
     'sqrt_embedding_dim': 128**(1/2),
     'encoder_layer_num': 6,
     'qkv_dim': 16,
-    'head_num': 8,
+    'head_num': 4,
     'logit_clipping': 10,
     'ff_hidden_dim': 512,
     'eval_type': 'argmax',
@@ -62,9 +62,9 @@ optimizer_params = {
 trainer_params = {
     'use_cuda': USE_CUDA,
     'cuda_device_num': CUDA_DEVICE_NUM,
-    'epochs': 30,
+    'epochs': 2,
     'train_episodes': 100*1000,
-    'train_batch_size': 32,
+    'train_batch_size': 64,
     'baseline': 'val',
     'logging': {
         'model_save_interval': 2,
@@ -77,7 +77,7 @@ trainer_params = {
     }
 }
 
-desc = f"tsp_n{env_params['problem_size']}-{trainer_params['train_episodes']}_episodes-{trainer_params['baseline']}"
+desc = f"tsp_n{env_params['problem_size']}-{trainer_params['baseline']}-no_residual-no_q_first"
 
 logger_params = {
     'log_file': {
@@ -99,6 +99,7 @@ def set_path(log_file):
         log_file['filepath'] = log_file['filepath'].format(desc='')
 
     set_result_folder(log_file['filepath'])
+
 
 def main():
     if DEBUG_MODE:
@@ -170,4 +171,5 @@ def _print_config():
 ##########################################################################################
 
 if __name__ == "__main__":
+    torch.set_float32_matmul_precision('high')
     main()

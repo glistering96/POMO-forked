@@ -83,6 +83,8 @@ class CVRPEnv:
         self.reset_state = Reset_State()
         self.step_state = Step_State()
 
+        self.device = torch.device('cuda')
+
     def use_saved_problems(self, filename, device):
         self.FLAG__use_saved_problems = True
 
@@ -103,6 +105,10 @@ class CVRPEnv:
             node_demand = self.saved_node_demand[self.saved_index:self.saved_index+batch_size]
             self.saved_index += batch_size
 
+        depot_xy = depot_xy.to(self.device)
+        node_xy = node_xy.to(self.device)
+        node_demand = node_demand.to(self.device)
+
         if aug_factor > 1:
             if aug_factor == 8:
                 self.batch_size = self.batch_size * 8
@@ -112,19 +118,19 @@ class CVRPEnv:
             else:
                 raise NotImplementedError
 
-        self.depot_node_xy = torch.cat((depot_xy, node_xy), dim=1)
+        self.depot_node_xy = torch.cat((depot_xy, node_xy), dim=1).to(self.device)
         # shape: (batch, problem+1, 2)
-        depot_demand = torch.zeros(size=(self.batch_size, 1))
+        depot_demand = torch.zeros(size=(self.batch_size, 1)).to(self.device)
         # shape: (batch, 1)
         self.depot_node_demand = torch.cat((depot_demand, node_demand), dim=1)
         # shape: (batch, problem+1)
 
 
-        self.BATCH_IDX = torch.arange(self.batch_size)[:, None].expand(self.batch_size, self.pomo_size)
-        self.POMO_IDX = torch.arange(self.pomo_size)[None, :].expand(self.batch_size, self.pomo_size)
+        self.BATCH_IDX = torch.arange(self.batch_size)[:, None].expand(self.batch_size, self.pomo_size).to(self.device)
+        self.POMO_IDX = torch.arange(self.pomo_size)[None, :].expand(self.batch_size, self.pomo_size).to(self.device)
 
-        self.reset_state.depot_xy = depot_xy
-        self.reset_state.node_xy = node_xy
+        self.reset_state.depot_xy = depot_xy.to(self.device)
+        self.reset_state.node_xy = node_xy.to(self.device)
         self.reset_state.node_demand = node_demand
 
         self.step_state.BATCH_IDX = self.BATCH_IDX
@@ -134,18 +140,18 @@ class CVRPEnv:
         self.selected_count = 0
         self.current_node = None
         # shape: (batch, pomo)
-        self.selected_node_list = torch.zeros((self.batch_size, self.pomo_size, 0), dtype=torch.long)
+        self.selected_node_list = torch.zeros((self.batch_size, self.pomo_size, 0), dtype=torch.long).to(self.device)
         # shape: (batch, pomo, 0~)
 
-        self.at_the_depot = torch.ones(size=(self.batch_size, self.pomo_size), dtype=torch.bool)
+        self.at_the_depot = torch.ones(size=(self.batch_size, self.pomo_size), dtype=torch.bool).to(self.device)
         # shape: (batch, pomo)
-        self.load = torch.ones(size=(self.batch_size, self.pomo_size))
+        self.load = torch.ones(size=(self.batch_size, self.pomo_size)).to(self.device)
         # shape: (batch, pomo)
-        self.visited_ninf_flag = torch.zeros(size=(self.batch_size, self.pomo_size, self.problem_size+1))
+        self.visited_ninf_flag = torch.zeros(size=(self.batch_size, self.pomo_size, self.problem_size+1)).to(self.device)
         # shape: (batch, pomo, problem+1)
-        self.ninf_mask = torch.zeros(size=(self.batch_size, self.pomo_size, self.problem_size+1))
+        self.ninf_mask = torch.zeros(size=(self.batch_size, self.pomo_size, self.problem_size+1)).to(self.device)
         # shape: (batch, pomo, problem+1)
-        self.finished = torch.zeros(size=(self.batch_size, self.pomo_size), dtype=torch.bool)
+        self.finished = torch.zeros(size=(self.batch_size, self.pomo_size), dtype=torch.bool).to(self.device)
         # shape: (batch, pomo)
 
         reward = None
